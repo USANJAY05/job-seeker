@@ -1,0 +1,1 @@
+export const resume = { id: 'r1', filename: 'Backend.tex', target: 'Target: Stripe', status: 'Primary', engine: 'XeLaTeX', skills: ['Go'], compiledLabel: 'Compiled today', compileStatus: 'Ready', filterIds: ['primary'] };

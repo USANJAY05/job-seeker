@@ -1,0 +1,21 @@
+import React, { useState } from 'react';
+import { SmallButton } from '../components/core';
+import { ChoiceList, SettingsSection, SettingsToggle } from '../components/patterns/Settings';
+import { SettingsScreenShell, SettingsText, type SettingsScreenProps } from './SettingsScreenShell';
+
+export type RetentionFlags = { payloads: boolean; anonymize: boolean; cache: boolean; master: boolean; traces: boolean; keys: boolean };
+export type RetentionPolicyInitial = { jobData: string; versions: string; logs: string; outreach: string; flags: RetentionFlags };
+const emptyFlags: RetentionFlags = { payloads: false, anonymize: false, cache: false, master: false, traces: false, keys: false };
+export function RetentionPolicyScreen({ onBack, onAction, initial }: SettingsScreenProps & { initial?: RetentionPolicyInitial }) {
+  const [jobData, setJobData] = useState(initial?.jobData ?? ''); const [versions, setVersions] = useState(initial?.versions ?? ''); const [logs, setLogs] = useState(initial?.logs ?? ''); const [outreach, setOutreach] = useState(initial?.outreach ?? ''); const [flags, setFlags] = useState(initial?.flags ?? emptyFlags);
+  const toggle = (key: keyof RetentionFlags) => (value: boolean) => setFlags(old => ({ ...old, [key]: value }));
+  const reset = () => { setJobData(initial?.jobData ?? ''); setVersions(initial?.versions ?? ''); setLogs(initial?.logs ?? ''); setOutreach(initial?.outreach ?? ''); setFlags(initial?.flags ?? emptyFlags); };
+  return <SettingsScreenShell title="Retention Policy" subtitle="Data lifecycle settings" onBack={onBack} headerAction={<SmallButton label="Save" icon="content-save-outline" variant="primary" onPress={() => onAction('Save retention rules')} />}>
+    <SettingsSection title="Lifecycle Daemon" icon="autorenew" badge="Not connected"><SettingsText>Retention status and storage metrics will be available after connecting a service.</SettingsText></SettingsSection>
+    <SettingsSection title="Job Ingestion" icon="source-branch"><SettingsText>Scraped Job Data Retention</SettingsText><ChoiceList selectedId={jobData} onSelect={setJobData} items={['7d', '30d', '90d', 'Manual'].map(id => ({ id, title: id }))} /><SettingsToggle title="Purge Raw Scraping Payloads" value={flags.payloads} onValueChange={toggle('payloads')} /><SettingsToggle title="Anonymize Recruiter Metadata" value={flags.anonymize} onValueChange={toggle('anonymize')} /></SettingsSection>
+    <SettingsSection title="Resume Builds & Compiler Artifacts" icon="console"><SettingsText>Tailored Version Retention Depth</SettingsText><ChoiceList selectedId={versions} onSelect={setVersions} items={[{ id: '10', title: 'Last 10' }, { id: '14d', title: '14 Days' }, { id: 'indefinite', title: 'Indefinite' }]} /><SettingsToggle title="Clear LaTeX Compiler Cache" value={flags.cache} onValueChange={toggle('cache')} /><SettingsToggle title="Retain Golden Master Resumes" value={flags.master} onValueChange={toggle('master')} /><SmallButton label="Purge Compiler Logs" icon="delete-outline" onPress={() => onAction('Purge compiler logs')} /></SettingsSection>
+    <SettingsSection title="Application Logs & Recruiter Outreach" icon="source-branch"><SettingsText>ATS Webhook Payloads</SettingsText><ChoiceList selectedId={logs} onSelect={setLogs} items={[{ id: '7d', title: '7 Days' }, { id: '30d', title: '30 Days' }, { id: 'manual', title: 'Manual' }]} /><SettingsText>Recruiter Outreach Thread</SettingsText><ChoiceList selectedId={outreach} onSelect={setOutreach} items={[{ id: 'archive', title: 'Until Archive' }, { id: '30d', title: '30 Days' }]} /><SettingsToggle title="Prune Dispatch Error Traces" value={flags.traces} onValueChange={toggle('traces')} /></SettingsSection>
+    <SettingsSection title="Vault & Token Destruction" icon="lock-outline"><SettingsToggle title="Destroy Session Keys on Lock or Exit" value={flags.keys} onValueChange={toggle('keys')} /><SettingsText>Immediate scrubbing will remove temporary content when connected.</SettingsText><SmallButton label="Run Immediate Hard Scrub" icon="delete-forever-outline" onPress={() => onAction('Run immediate hard scrub')} /></SettingsSection>
+    <SettingsSection title="Policy actions" icon="cog-outline"><SmallButton label="Reset Preview Defaults" icon="restore" onPress={reset} /></SettingsSection>
+  </SettingsScreenShell>;
+}

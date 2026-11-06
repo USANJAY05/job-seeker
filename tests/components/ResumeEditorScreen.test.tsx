@@ -1,0 +1,20 @@
+import React from 'react';
+import { Text } from 'react-native';
+import { fireEvent } from '@testing-library/react-native';
+import { ResumeEditorScreen } from '../../src/screens/ResumeEditorScreen';
+import { demoForm } from '../../src/demo/editorData';
+import { renderUI } from './helpers';
+test('switches code, form and preview modes and forwards changes', () => {
+  const onSourceChange = jest.fn(), onFormChange = jest.fn(), onSaveCompile = jest.fn();
+  const screen = renderUI(<ResumeEditorScreen filename="Resume.tex" source="source" onSourceChange={onSourceChange} form={demoForm} onFormChange={onFormChange} onBack={jest.fn()} onNavigate={jest.fn()} onCompile={jest.fn()} onSaveCompile={onSaveCompile} preview={<Text>Illustrative preview</Text>} />);
+  fireEvent.changeText(screen.getByLabelText('LaTeX source'), 'new source');
+  expect(onSourceChange).toHaveBeenCalledWith('new source');
+  fireEvent.press(screen.getByLabelText('Save & Compile'));
+  expect(onSaveCompile).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByText('Form'));
+  fireEvent.changeText(screen.getByLabelText('FULL NAME'), 'Sam');
+  expect(onFormChange).toHaveBeenCalledWith(expect.objectContaining({ fullName: 'Sam' }));
+  fireEvent(screen.getByTestId('editor-pager'), 'pageSelected', { nativeEvent: { position: 2 } });
+  expect(screen.getByText('Illustrative preview')).toBeTruthy();
+  expect(screen.getByRole('tab', { name: /Preview/ }).props.accessibilityState.selected).toBe(true);
+});

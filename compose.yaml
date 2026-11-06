@@ -1,0 +1,70 @@
+services:
+  api:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://jobbuddy:jobbuddy@postgres:5432/jobbuddy
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:8081,http://localhost:19006
+      OBJECT_STORAGE_ENDPOINT_URL: http://minio:9000
+      OBJECT_STORAGE_REGION: us-east-1
+      OBJECT_STORAGE_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      OBJECT_STORAGE_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      OBJECT_STORAGE_BUCKET: job-buddy-templates
+      OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
+      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET:-}
+      ADMIN_JWT_ISSUER: job-buddy-api
+      ADMIN_TOKEN_TTL_MINUTES: ${ADMIN_TOKEN_TTL_MINUTES:-60}
+      ADMIN_BOOTSTRAP_EMAIL: ${ADMIN_BOOTSTRAP_EMAIL:-}
+      ADMIN_BOOTSTRAP_PASSWORD: ${ADMIN_BOOTSTRAP_PASSWORD:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: jobbuddy
+      POSTGRES_USER: jobbuddy
+      POSTGRES_PASSWORD: jobbuddy
+    ports:
+      - "5432:5432"
+    volumes:
+      - jobbuddy-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobbuddy -d jobbuddy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - jobbuddy-redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-07-23T15-54-02Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - jobbuddy-minio:/data
+
+volumes:
+  jobbuddy-postgres:
+  jobbuddy-redis:
+  jobbuddy-minio:

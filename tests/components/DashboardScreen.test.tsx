@@ -1,0 +1,30 @@
+import React from 'react';
+import { fireEvent } from '@testing-library/react-native';
+import { DashboardScreen } from '../../src/screens/DashboardScreen';
+import { demoResumes } from '../../src/demo/libraryData';
+import { demoPipeline } from '../../src/demo/copilotData';
+import { renderUI } from './helpers';
+const callbacks = { onOpenFleet: jest.fn(), onAction: jest.fn() };
+test('shows counts, score, and status breakdowns from supplied app data', () => {
+  const onNavigate = jest.fn(), onOpenProfile = jest.fn();
+  const screen = renderUI(<DashboardScreen {...callbacks} resumes={demoResumes} opportunities={demoPipeline} dataLabel="Example data" onNavigate={onNavigate} onOpenProfile={onOpenProfile} />);
+  expect(screen.getByRole('header', { name: 'Home' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Resumes: 4' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Opportunities: 4' })).toBeTruthy();
+  expect(screen.queryByText('Conversations')).toBeNull();
+  expect(screen.queryByText('Start Chat')).toBeNull();
+  expect(screen.getByText('97%')).toBeTruthy();
+  expect(screen.getByRole('progressbar', { name: 'Applied: 2 of 4' })).toBeTruthy();
+  expect(screen.getByRole('progressbar', { name: 'Primary: 1 of 4' })).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('View Pipeline')); fireEvent.press(screen.getByLabelText('Operator Profile'));
+  expect(onNavigate).toHaveBeenCalledWith('pipeline'); expect(onOpenProfile).toHaveBeenCalled();
+});
+test('updates when data changes and handles missing or invalid scores', () => {
+  const base = { ...callbacks, onNavigate: jest.fn(), onOpenProfile: jest.fn() };
+  const screen = renderUI(<DashboardScreen {...base} resumes={[]} opportunities={[]} />);
+  expect(screen.getByText('No scores available')).toBeTruthy();
+  expect(screen.getByText('Add opportunities to see their status breakdown.')).toBeTruthy();
+  screen.rerender(<DashboardScreen {...base} resumes={[{ ...demoResumes[0], atsScore: NaN }, { ...demoResumes[1], atsScore: 80 }]} opportunities={demoPipeline} />);
+  expect(screen.getByRole('button', { name: 'Resumes: 2' })).toBeTruthy();
+  expect(screen.getAllByText('80%')).toHaveLength(2); expect(screen.getByText('1 scored resume')).toBeTruthy();
+});

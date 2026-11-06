@@ -1,0 +1,13 @@
+{
+  "expo": {
+    "name": "Job Buddy",
+    "slug": "job-buddy",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "platforms": ["ios", "android", "web"],
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

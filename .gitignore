@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.expo/
+
+backend/.venv/
+backend/.local/
+backend/.env
+__pycache__/
+*.py[cod]
+backend/.pytest_cache/
+backend/.mypy_cache/
+style-guide/
