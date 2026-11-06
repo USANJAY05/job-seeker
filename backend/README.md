@@ -1,51 +1,85 @@
-# Job Buddy API
+# Job Buddy Backend
 
-The backend uses FastAPI, PostgreSQL, and Redis. PostgreSQL stores resume records, template records, and the operator profile. Redis caches read responses and invalidates the relevant cache keys after writes. The database starts empty; it does not load preview mock records.
+FastAPI service for resume, template, profile, and admin operations. The repository's overall system diagram and full-stack run guide are in the [root README](../README.md).
 
-## Run the stack
+## Backend architecture
 
-From the repository root:
-
-```sh
-docker compose up --build
+```mermaid
+flowchart LR
+  Client[Expo app / admin client] --> API[FastAPI routes and Pydantic schemas]
+  API --> Auth[JWT auth, Argon2 passwords, RBAC]
+  API --> DB[(PostgreSQL)]
+  API --> Cache[(Redis)]
+  API --> Store[S3-compatible object store]
+  Store --> Local[MinIO locally]
+  Store --> Cloud[AWS S3 in production]
+  API --> Export[Resume export registry]
+  Export --> PDF[PDF exporter]
 ```
 
-The API is available at `http://localhost:8000`; interactive OpenAPI docs are at `http://localhost:8000/docs`. Compose starts PostgreSQL on `5432`, Redis on `6379`, and MinIO on `9000` (console `9001`). For Expo web or the iOS simulator, set `EXPO_PUBLIC_API_URL=http://localhost:8000` before starting Metro. For a physical phone, use the development machine's LAN address instead of `localhost`.
+- `app/routes/` exposes API endpoints; `app/schemas.py` validates the camelCase API contract.
+- `app/models.py` defines PostgreSQL records. Redis caches reads and template source text; cache failures fall back to PostgreSQL/object storage.
+- `app/object_storage.py` wraps the S3 API through boto3. Local MinIO and AWS S3 use the same adapter. PostgreSQL stores template source keys, checksums, sizes, and placeholder definitions; source text is read from object storage on demand.
+- `app/admin_security.py` provides signed bearer-token authentication and permission checks. Role/user administration is in `app/routes/admin.py`.
+- `app/exports/` contains the format-neutral resume exporter interface and registry. PDF is registered by default.
 
-To run only the API process outside Docker, start PostgreSQL and Redis, install `backend/requirements.txt`, and run:
+## Run locally
+
+From the repository root, start Postgres, Redis, and MinIO:
+
+```sh
+docker compose up -d postgres redis minio
+```
+
+Configure backend settings and initial admin credentials:
 
 ```sh
 cd backend
 cp .env.example .env
-uvicorn app.main:app --reload
 ```
 
-## Routes
+Edit `backend/.env`: replace `ADMIN_JWT_SECRET` with a random value of at least 32 characters and set a strong unique `ADMIN_BOOTSTRAP_PASSWORD`. Then install dependencies and run the API:
 
-| Method | Path | Behavior |
+```sh
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
+```
+
+OpenAPI docs are at `http://localhost:8000/docs`. The API creates new tables and applies the small additive template/admin columns at startup. Existing template source text in PostgreSQL migrates to object storage when first fetched or forked.
+
+To run the complete Compose stack instead, follow the [root run guide](../README.md#run-the-full-stack-with-docker-compose).
+
+## API reference
+
+| Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Health status |
-| GET, POST | `/api/resumes` | List/search resumes; create a resume |
-| GET, PATCH, DELETE | `/api/resumes/:id` | Read, update, or remove a resume |
-| POST | `/api/resumes/:id/duplicate` | Duplicate a resume |
-| GET | `/api/resumes/:id/download?format=pdf` | Download a resume in the requested registered format |
-| GET | `/api/templates` | List/search templates, with optional `category` and `q` filters |
-| POST | `/api/templates` | Create a template (`templates:create` bearer permission required) |
-| GET, PATCH | `/api/templates/:id` | Read a template or update its `bookmarked` value |
-| GET | `/api/templates/:id/source` | Fetch full template source text on demand |
-| POST | `/api/templates/:id/fork` | Create a resume from a template with source |
-| POST | `/api/admin/auth/login` | Sign in and receive a bearer token |
-| POST | `/api/admin/auth/change-password` | Change the signed-in admin's password and revoke their existing tokens |
-| GET | `/api/admin/me`, `/api/admin/me/permissions` | Inspect the signed-in admin and effective permissions |
-| GET | `/api/admin/roles` | Read available roles and their permission sets |
-| GET, POST | `/api/admin/users` | List admin users or create a user (requires `users:read` / `users:manage`) |
-| PATCH | `/api/admin/users/:id/role` | Change a user's role/permissions or deactivate them (`users:manage`) |
-| GET, POST | `/api/admin/templates` | List or create templates with role-based permission checks |
+| GET, POST | `/api/resumes` | List/search and create resumes |
+| GET, PATCH, DELETE | `/api/resumes/{id}` | Read, update, or delete a resume |
+| POST | `/api/resumes/{id}/duplicate` | Duplicate a resume |
+| GET | `/api/resumes/{id}/download?format=pdf` | Download in a registered file format |
+| GET | `/api/templates` | Browse template metadata |
+| POST | `/api/templates` | Create a template; requires bearer permission `templates:create` |
+| GET, PATCH | `/api/templates/{id}` | Read metadata or update bookmark state |
+| GET | `/api/templates/{id}/source` | Fetch full template source on demand |
+| POST | `/api/templates/{id}/fork` | Create a resume from a template |
+| POST | `/api/admin/auth/login` | Admin login; returns an access token |
+| POST | `/api/admin/auth/change-password` | Change password and revoke existing tokens |
+| GET | `/api/admin/me` | Inspect the authenticated admin |
+| GET | `/api/admin/me/permissions` | Inspect the current role and effective permissions |
+| GET | `/api/admin/roles` | List roles and permission grants (`roles:read`) |
+| GET, POST | `/api/admin/users` | List or create admin users (`users:read` / `users:manage`) |
+| PATCH | `/api/admin/users/{id}/role` | Update role, permission override, or active state (`users:manage`) |
+| GET, POST | `/api/admin/templates` | List or create templates (`templates:read` / `templates:create`) |
 | GET, PUT, PATCH | `/api/profile` | Read or update the operator profile |
 
-Resume and template responses preserve the app's camelCase JSON contract. Resume sources/forms and template/profile nested records are stored in PostgreSQL. Template source text lives in S3-compatible object storage; PostgreSQL stores the object key, checksum, size, metadata, and placeholder schema. Redis caches template reads/source text with a short TTL and fails open when unavailable.
+Admin roles are `super_admin`, `admin`, `editor`, and `viewer`. Only `super_admin` can manage admin users or grant elevated permissions. Roles are reloaded from PostgreSQL for every protected request so changes apply immediately. Both template-creation routes require the same `templates:create` grant.
 
-Template creation accepts `source` as the full UTF-8 template text (up to 2 MB) and `placeholders` as a typed schema for template variables. The API writes source bytes to the configured S3-compatible object store and returns metadata without the source body; fetch it from `GET /api/templates/:id/source` when opening the template. Placeholder types are `string`, `number`, `boolean`, `array`, or `object`; limits such as `maxLength`, `maxItems`, and `itemMaxLength` are supported. The reserved `extras` placeholder must be an array of `{ key, value }` string entries, allowing each user to add multiple custom key/value values. Define `maxItems` and `maxLength` on both `extras` fields. Example:
+## Creating a template
+
+Send full UTF-8 template text in `source` (maximum 2 MB) and variable definitions in `placeholders`. The response contains metadata, not the large source field; fetch source with `/api/templates/{id}/source` when a client opens it.
 
 ```json
 {
@@ -64,26 +98,19 @@ Template creation accepts `source` as the full UTF-8 template text (up to 2 MB) 
 }
 ```
 
-Existing databases add the object-key, checksum, size, and `placeholders` columns at API startup. Legacy template sources stored in PostgreSQL are copied to object storage and removed from the row the first time the source endpoint or fork endpoint is used.
+Supported placeholder types are `string`, `number`, `boolean`, `array`, and `object`; array and string bounds include `maxItems`, `maxLength`, and `itemMaxLength`. `extras` is a reserved array of repeatable custom key/value strings.
 
-Local development uses MinIO through the same S3 API client. For AWS S3, set `OBJECT_STORAGE_ENDPOINT_URL` empty, configure `OBJECT_STORAGE_REGION` and AWS credentials through the standard AWS environment/role chain, and set `OBJECT_STORAGE_BUCKET` to the deployed bucket. Keep `OBJECT_STORAGE_FORCE_PATH_STYLE=false` for AWS; Compose sets it to `true` for MinIO.
+## Admin auth and permissions
 
-Admin auth uses short-lived HS256 bearer tokens and Argon2 password hashes. Configure a random `ADMIN_JWT_SECRET` of at least 32 characters and one-time `ADMIN_BOOTSTRAP_EMAIL` / `ADMIN_BOOTSTRAP_PASSWORD` values before the first API start. The bootstrap account receives `super_admin`; subsequent users are created through the protected users endpoint. Template creation requires `templates:create` on both `/api/admin/templates` and `/api/templates`. Roles are `super_admin`, `admin`, `editor`, and `viewer`; `GET /api/admin/roles` and `/api/admin/me/permissions` expose role grants. Roles and permissions are reloaded from PostgreSQL on every protected request, so changes take effect without waiting for token expiry. For Compose, put these variables in a root `.env`; for direct local runs, set them in `backend/.env`.
+On first startup, the configured bootstrap email/password creates the initial `super_admin`. Login with JSON `{ "email": "...", "password": "..." }` at `/api/admin/auth/login`, then send `Authorization: Bearer <accessToken>` to protected endpoints. The token lifetime is configured by `ADMIN_TOKEN_TTL_MINUTES` (default 60). Passwords use Argon2 hashes; tokens use HS256 and require `ADMIN_JWT_SECRET` of at least 32 characters.
 
-Default role grants: `super_admin` has all permissions; `admin` can read/create templates and read users/roles; `editor` can read/create templates and inspect roles; `viewer` can read templates and inspect roles. Only `super_admin` can manage admin accounts or grant elevated permissions. Password changes invalidate the user's existing bearer tokens.
+Role grants:
 
-Example login:
+| Role | Default grants |
+| --- | --- |
+| `super_admin` | All permissions |
+| `admin` | Read/create templates, read users and roles |
+| `editor` | Read/create templates, inspect roles |
+| `viewer` | Read templates, inspect roles |
 
-```sh
-curl -X POST http://localhost:8000/api/admin/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.com","password":"your-bootstrap-password"}'
-```
-
-Use the returned `accessToken` as `Authorization: Bearer <token>` for admin endpoints.
-
-Resume exports use the `app/exports` interface and registry. The PDF exporter is registered by default and renders the structured resume form (with basic record metadata as a fallback). To add DOCX or another format, implement `ResumeExporter`, register it in `registry.py`, and add its dependency if needed; the download route and query parameter remain unchanged. Export output is returned as an attachment with its format-specific MIME type and extension.
-
-Profile project entries accept optional `githubUrl` and `liveUrl` values. Experience entries accept optional `startDate` and `endDate` strings; the UI uses `YYYY-MM` and allows `Present` for an ongoing role.
-
-The credentials and CORS origins in the compose file are for local development only. Before deploying to a public production environment, configure deployment secrets, TLS, authentication and per-user profile ownership, Alembic migrations, and deployment-specific CORS.
+Set `OBJECT_STORAGE_ENDPOINT_URL` to MinIO for local development. For AWS S3, leave the endpoint empty, configure the region and standard AWS credential chain, and set the target bucket. Compose uses path-style requests for MinIO; AWS uses the default addressing mode. Configure production secrets, TLS, authentication, per-user profile ownership, database migrations, and deployment-specific CORS before public deployment.
