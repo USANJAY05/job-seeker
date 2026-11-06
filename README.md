@@ -57,3 +57,7 @@ Then configure `backend/.env` from its example, install Python dependencies, and
 ## Admin access
 
 The first admin is bootstrapped from `ADMIN_BOOTSTRAP_EMAIL` and `ADMIN_BOOTSTRAP_PASSWORD`. Admin endpoints use short-lived bearer tokens and role-based permissions. Keep real secrets in local environment files or deployment secret storage; `.env` files are ignored by Git. See the [backend admin guide](backend/README.md#admin-auth-and-permissions) for login, role, and permission routes.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE). You may use, modify, and distribute it, provided you retain the copyright and license notice.
